@@ -12,27 +12,30 @@ export default function DivideConquerPage() {
   const steps = useMemo(
     () =>
       generateDivideConquerSteps({
-        points: [
-          { id: "P0", label: "P0", x: 40, y: 350 },
-          { id: "P1", label: "P1", x: 62, y: 120 },
-          { id: "P2", label: "P2", x: 78, y: 260 },
-          { id: "P3", label: "P3", x: 95, y: 80 },
-          { id: "P4", label: "P4", x: 118, y: 200 },
-          { id: "P5", label: "P5", x: 142, y: 310 },
-          { id: "P6", label: "P6", x: 168, y: 140 },
-          { id: "P7", label: "P7", x: 189, y: 240 },
-          { id: "P8", label: "P8", x: 214, y: 100 },
-          { id: "P9", label: "P9", x: 238, y: 182 },
-          { id: "P10", label: "P10", x: 262, y: 188 },
-          { id: "P11", label: "P11", x: 286, y: 330 },
-          { id: "P12", label: "P12", x: 305, y: 130 },
-          { id: "P13", label: "P13", x: 326, y: 235 },
-          { id: "P14", label: "P14", x: 344, y: 92 },
-          { id: "P15", label: "P15", x: 368, y: 285 },
-          { id: "P16", label: "P16", x: 392, y: 160 },
-          { id: "P17", label: "P17", x: 416, y: 245 },
-          { id: "P18", label: "P18", x: 438, y: 110 },
-          { id: "P19", label: "P19", x: 462, y: 350 },
+                points: [
+          { id: "P0",  label: "P0",  x: 44,  y: 236 },
+          { id: "P1",  label: "P1",  x: 67,  y: 78  },
+          { id: "P2",  label: "P2",  x: 89,  y: 168 },
+          { id: "P3",  label: "P3",  x: 121, y: 246 },
+          { id: "P4",  label: "P4",  x: 146, y: 118 },
+          { id: "P5",  label: "P5",  x: 168, y: 214 },
+          { id: "P6",  label: "P6",  x: 193, y: 94  },
+          { id: "P7",  label: "P7",  x: 209, y: 150 },
+          { id: "P8",  label: "P8",  x: 234, y: 236 },
+
+          // 分割线附近：跨左右的更近点对（strip 会更新 d）
+          { id: "P9",  label: "P9",  x: 254, y: 168 },
+          { id: "P10", label: "P10", x: 263, y: 174 },
+
+          { id: "P11", label: "P11", x: 279, y: 72  },
+          { id: "P12", label: "P12", x: 307, y: 244 },
+          { id: "P13", label: "P13", x: 329, y: 158 },
+          { id: "P14", label: "P14", x: 353, y: 112 },
+          { id: "P15", label: "P15", x: 386, y: 222 },
+          { id: "P16", label: "P16", x: 405, y: 140 },
+          { id: "P17", label: "P17", x: 441, y: 186 },
+          { id: "P18", label: "P18", x: 463, y: 90  },
+          { id: "P19", label: "P19", x: 488, y: 240 },
         ],
       }),
     []
@@ -101,6 +104,36 @@ export default function DivideConquerPage() {
               <span>合并距离 d</span>
               <strong>{formatDistance(meta?.mergedDistance)}</strong>
             </div>
+
+            {meta?.i !== undefined ? (
+              <div className="info-item">
+                <span>strip 外层 i</span>
+                <strong>{meta.i}</strong>
+              </div>
+            ) : null}
+
+            {meta?.j !== undefined ? (
+              <div className="info-item">
+                <span>strip 内层 j</span>
+                <strong>{meta.j}</strong>
+              </div>
+            ) : null}
+
+            {meta?.currentDistance !== undefined ? (
+              <div className="info-item">
+                <span>当前比较距离</span>
+                <strong>{formatDistance(meta.currentDistance)}</strong>
+              </div>
+            ) : null}
+
+            {meta?.comparisonCount !== undefined ? (
+              <div className="info-item">
+                <span>strip 比较进度</span>
+                <strong>
+                  {meta.comparisonCount} / {meta.totalComparisons ?? "—"}
+                </strong>
+              </div>
+            ) : null}
           </div>
         </aside>
       </main>

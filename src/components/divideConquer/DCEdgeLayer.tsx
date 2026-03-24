@@ -15,7 +15,9 @@ export default function DCEdgeLayer({ nodes, edges }: DCEdgeLayerProps) {
         const toNode = nodeMap.get(edge.to);
 
         if (!fromNode || !toNode) return null;
-        if ((fromNode.opacity ?? 1) < 0.04 || (toNode.opacity ?? 1) < 0.04) return null;
+
+        const edgeOpacity = Math.min(fromNode.opacity ?? 1, toNode.opacity ?? 1);
+        if (edgeOpacity < 0.04) return null;
 
         const x1 = fromNode.layoutX;
         const y1 = fromNode.layoutY + fromNode.height / 2;
@@ -33,6 +35,7 @@ export default function DCEdgeLayer({ nodes, edges }: DCEdgeLayerProps) {
             stroke="#94a3b8"
             strokeWidth={2.2}
             strokeLinecap="round"
+            strokeOpacity={edgeOpacity}
           />
         );
       })}

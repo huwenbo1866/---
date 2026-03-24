@@ -180,6 +180,8 @@ function cloneEdge(edge: DCTreeEdge): DCTreeEdge {
 function buildPointStates(params: {
   points: Point[];
   stripIds?: Set<string>;
+  candidateIds?: Set<string>;
+  basePointId?: string;
   comparePair?: [string, string];
   bestPair?: [string, string];
 }): DCLocalPoint[] {
@@ -188,6 +190,12 @@ function buildPointStates(params: {
 
     if (params.stripIds?.has(point.id)) {
       state = "strip";
+    }
+    if (params.candidateIds?.has(point.id)) {
+      state = "candidate";
+    }
+    if (params.basePointId && point.id === params.basePointId) {
+      state = "base";
     }
     if (params.comparePair?.includes(point.id)) {
       state = "compare";
@@ -402,19 +410,111 @@ function buildMergeReadyScene(params: {
   };
 }
 
+function buildStripCandidatesScene(params: {
+  points: Point[];
+  midX: number;
+  stripIds: Set<string>;
+  d: number;
+  bestPair?: [string, string];
+  bestDistance?: number;
+}): DCMiniScene {
+  const currentD = params.bestDistance ?? params.d;
+
+  return {
+    points: buildPointStates({
+      points: params.points,
+      stripIds: params.stripIds,
+      bestPair: params.bestPair,
+    }),
+    splitLineX: params.midX,
+    guideLines: [
+      { x: params.midX, label: "L", kind: "split" },
+      { x: params.midX - params.d, label: "L-d", kind: "strip-bound" },
+      { x: params.midX + params.d, label: "L+d", kind: "strip-bound" },
+    ],
+    stripBand: {
+      leftX: params.midX - params.d,
+      rightX: params.midX + params.d,
+      label: `d=${formatDistance(currentD)}`,
+    },
+    regionHighlights: [
+      { side: "left", fill: "#bbf7d0", opacity: 0.18 },
+      { side: "right", fill: "#ddd6fe", opacity: 0.16 },
+    ],
+    compareSegments: params.bestPair
+      ? makeSegment(params.bestPair, "best", "best")
+      : undefined,
+    result: makeResult(currentD, params.bestPair, `d=${formatDistance(currentD)}`),
+  };
+}
+
+function buildStripOuterScene(params: {
+  points: Point[];
+  midX: number;
+  stripIds: Set<string>;
+  d: number;
+  basePointId: string;
+  candidateIds: Set<string>;
+  bestPair?: [string, string];
+  bestDistance?: number;
+}): DCMiniScene {
+  const currentD = params.bestDistance ?? params.d;
+
+  return {
+    points: buildPointStates({
+      points: params.points,
+      stripIds: params.stripIds,
+      basePointId: params.basePointId,
+      candidateIds: params.candidateIds,
+      bestPair: params.bestPair,
+    }),
+    splitLineX: params.midX,
+    guideLines: [
+      { x: params.midX, label: "L", kind: "split" },
+      { x: params.midX - params.d, label: "L-d", kind: "strip-bound" },
+      { x: params.midX + params.d, label: "L+d", kind: "strip-bound" },
+    ],
+    stripBand: {
+      leftX: params.midX - params.d,
+      rightX: params.midX + params.d,
+      label: `d=${formatDistance(currentD)}`,
+    },
+    regionHighlights: [
+      { side: "left", fill: "#bbf7d0", opacity: 0.18 },
+      { side: "right", fill: "#ddd6fe", opacity: 0.16 },
+    ],
+    compareSegments: params.bestPair
+      ? makeSegment(params.bestPair, "best", "best")
+      : undefined,
+    result: makeResult(currentD, params.bestPair, `d=${formatDistance(currentD)}`),
+  };
+}
+
 function buildStripCompareScene(params: {
   points: Point[];
   midX: number;
   stripIds: Set<string>;
   d: number;
+  basePointId: string;
+  candidateIds: Set<string>;
   comparePair?: [string, string];
   bestPair?: [string, string];
   bestDistance?: number;
 }): DCMiniScene {
+  const currentD = params.bestDistance ?? params.d;
+
+  const isBestPair =
+    params.bestPair &&
+    params.comparePair &&
+    params.comparePair[0] === params.bestPair[0] &&
+    params.comparePair[1] === params.bestPair[1];
+
   return {
     points: buildPointStates({
       points: params.points,
       stripIds: params.stripIds,
+      basePointId: params.basePointId,
+      candidateIds: params.candidateIds,
       comparePair: params.comparePair,
       bestPair: params.bestPair,
     }),
@@ -427,7 +527,7 @@ function buildStripCompareScene(params: {
     stripBand: {
       leftX: params.midX - params.d,
       rightX: params.midX + params.d,
-      label: `d=${formatDistance(params.bestDistance ?? params.d)}`,
+      label: `d=${formatDistance(currentD)}`,
     },
     regionHighlights: [
       { side: "left", fill: "#bbf7d0", opacity: 0.18 },
@@ -438,27 +538,17 @@ function buildStripCompareScene(params: {
           {
             from: params.comparePair[0],
             to: params.comparePair[1],
-            label:
-              params.bestPair &&
-              params.comparePair[0] === params.bestPair[0] &&
-              params.comparePair[1] === params.bestPair[1]
-                ? "best"
-                : "cross",
-            state:
-              params.bestPair &&
-              params.comparePair[0] === params.bestPair[0] &&
-              params.comparePair[1] === params.bestPair[1]
-                ? "best"
-                : "compare",
+            label: isBestPair ? "best" : "cross",
+            state: isBestPair ? "best" : "compare",
           },
         ]
       : params.bestPair
       ? makeSegment(params.bestPair, "best", "best")
       : undefined,
     result: makeResult(
-      params.bestDistance,
+      currentD,
       params.bestPair,
-      `d=${formatDistance(params.bestDistance)}`
+      `d=${formatDistance(currentD)}`
     ),
   };
 }
@@ -751,13 +841,68 @@ export function generateDivideConquerSteps(
 
     const baseBest = betterResult(leftRes, rightRes);
 
+    // 先给一个“回收动画”步骤：子节点缩回父节点并淡出
+    const mergeSize = nodeSizeFor(sortedX.length, "merge", depth);
+    const retractLeftLayout = hiddenChildLayout(parentLayout, "left", leftPoints.length);
+    const retractRightLayout = hiddenChildLayout(parentLayout, "right", rightPoints.length);
+
+    upsertNode({
+      ...getNode(nodeId),
+      status: "returned",
+      width: Math.max(getNode(nodeId).width, mergeSize.width),
+      height: Math.max(getNode(nodeId).height, mergeSize.height),
+      miniScene: buildMergeReadyScene({
+        points: sortedX,
+        midX,
+        leftRes,
+        rightRes,
+        d: baseBest.distance,
+      }),
+    });
+
+    upsertNode({
+      ...getNode(leftNodeId),
+      layoutX: retractLeftLayout.x,
+      layoutY: retractLeftLayout.y,
+      width: retractLeftLayout.width,
+      height: retractLeftLayout.height,
+      opacity: 0.08,
+      status: "returned",
+    });
+
+    upsertNode({
+      ...getNode(rightNodeId),
+      layoutX: retractRightLayout.x,
+      layoutY: retractRightLayout.y,
+      width: retractRightLayout.width,
+      height: retractRightLayout.height,
+      opacity: 0.08,
+      status: "returned",
+      isSummaryNode: true,
+    });
+
+    setCamera(cameraForNodes([nodeId, leftNodeId, rightNodeId], depth === 0 ? 0.92 : 1.0));
+
+    pushStep({
+      stepType: "dc-children-retract",
+      title: "左右子问题动态回收至父节点",
+      description:
+        "左右子卡片缩回父节点附近并淡出，父节点接管 dL / dR 并准备进入 strip（带状区域）阶段。",
+      depth,
+      range,
+      leftDistance: leftRes.distance,
+      rightDistance: rightRes.distance,
+      mergedDistance: baseBest.distance,
+    });
+
+    // 真正移除（此时视觉上已基本回收）
     removeDescendants(nodeId);
 
     upsertNode({
       ...getNode(nodeId),
       status: "merging",
-      width: Math.max(getNode(nodeId).width, nodeSizeFor(sortedX.length, "merge", depth).width),
-      height: Math.max(getNode(nodeId).height, nodeSizeFor(sortedX.length, "merge", depth).height),
+      width: Math.max(getNode(nodeId).width, mergeSize.width),
+      height: Math.max(getNode(nodeId).height, mergeSize.height),
       miniScene: buildMergeReadyScene({
         points: sortedX,
         midX,
@@ -771,8 +916,9 @@ export function generateDivideConquerSteps(
 
     pushStep({
       stepType: "dc-merge-back-strip-ready",
-      title: "子问题结果回收到父节点并准备 strip 合并",
-      description: "左右子卡片在这一刻被移除，父节点内部直接接管左右结果并进入 strip 准备。",
+      title: "父节点进入 strip 阶段（带状区域准备）",
+      description:
+        "父节点已接管左右结果，确定 d = min(dL, dR)，并构造带宽 2d 的 strip，接下来在 strip 内执行改良蛮力扫描。",
       depth,
       range,
       leftDistance: leftRes.distance,
@@ -781,16 +927,95 @@ export function generateDivideConquerSteps(
     });
 
     let best = baseBest;
+
     const byY = sortByY(sortedX);
     const strip = byY.filter((point) => Math.abs(point.x - midX) < baseBest.distance);
     const stripIds = new Set(strip.map((point) => point.id));
 
+    const totalComparisons = strip.reduce((sum, _point, i) => {
+      return sum + Math.min(7, Math.max(0, strip.length - 1 - i));
+    }, 0);
+
+    // 先显示 strip 候选集合本身
+    upsertNode({
+      ...getNode(nodeId),
+      status: "merging",
+      miniScene: buildStripCandidatesScene({
+        points: sortedX,
+        midX,
+        stripIds,
+        d: baseBest.distance,
+        bestPair: best.pair,
+        bestDistance: best.distance,
+      }),
+    });
+
+    setCamera(cameraForNodes([nodeId], depth === 0 ? 1.14 : 1.22));
+
+    pushStep({
+      stepType: "dc-strip-candidates",
+      title: "构建 strip 候选集合并按 y 排序",
+      description: `选取满足 |x - L| < d 的点进入 strip（共 ${strip.length} 个），按 y 排序后使用“最多比较后继 7 个点”的改良蛮力法扫描。`,
+      depth,
+      range,
+      leftDistance: leftRes.distance,
+      rightDistance: rightRes.distance,
+      mergedDistance: best.distance,
+      totalComparisons,
+    });
+
+    let comparisonCount = 0;
+
     for (let i = 0; i < strip.length; i++) {
+      const basePointId = strip[i].id;
+
+      // 当前 i 对应的候选窗口（最多 7 个 + y 距离剪枝）
+      const candidateIds = new Set<string>();
+      for (let k = i + 1; k < strip.length && k <= i + 7; k++) {
+        if (strip[k].y - strip[i].y >= best.distance) break;
+        candidateIds.add(strip[k].id);
+      }
+
+      upsertNode({
+        ...getNode(nodeId),
+        status: "merging",
+        miniScene: buildStripOuterScene({
+          points: sortedX,
+          midX,
+          stripIds,
+          d: baseBest.distance,
+          basePointId,
+          candidateIds,
+          bestPair: best.pair,
+          bestDistance: best.distance,
+        }),
+      });
+
+      setCamera(cameraForNodes([nodeId], depth === 0 ? 1.14 : 1.22));
+
+      pushStep({
+        stepType: "dc-strip-outer-enter",
+        title: "strip 外层循环：固定基准点 i",
+        description: `外层 i=${i}，基准点为 ${basePointId}；仅需比较其后最多 7 个候选点（并用 y 差距进行剪枝）。`,
+        depth,
+        range,
+        leftDistance: leftRes.distance,
+        rightDistance: rightRes.distance,
+        mergedDistance: best.distance,
+        i,
+        comparisonCount,
+        totalComparisons,
+        bestDistance: best.distance,
+        bestPair: best.pair,
+      });
+
       for (let j = i + 1; j < strip.length && j <= i + 7; j++) {
         if (strip[j].y - strip[i].y >= best.distance) break;
 
         const currentPair: [string, string] = [strip[i].id, strip[j].id];
         const currentDistance = dist(strip[i], strip[j]);
+
+        comparisonCount += 1;
 
         if (currentDistance < best.distance) {
           best = {
@@ -807,6 +1032,8 @@ export function generateDivideConquerSteps(
             midX,
             stripIds,
             d: baseBest.distance,
+            basePointId,
+            candidateIds,
             comparePair: currentPair,
             bestPair: best.pair,
             bestDistance: best.distance,
@@ -817,19 +1044,28 @@ export function generateDivideConquerSteps(
 
         pushStep({
           stepType: "dc-strip-compare",
-          title: "在 strip 中按 y 序执行双重循环比较",
+          title: `strip 内层比较：i=${i}, j=${j}`,
           description:
             currentDistance < baseBest.distance && best.pair === currentPair
-              ? `按 y 序双重循环比较 strip 候选点对，${currentPair[0]} 与 ${currentPair[1]} 产生了更优解。`
-              : `按 y 序双重循环比较 strip 候选点对，当前检查 ${currentPair[0]} 与 ${currentPair[1]}。`,
+              ? `比较 ${currentPair[0]} 与 ${currentPair[1]}（dist=${formatDistance(currentDistance)}），得到更优解并更新 d。`
+              : `比较 ${currentPair[0]} 与 ${currentPair[1]}（dist=${formatDistance(currentDistance)}）。`,
           depth,
           range,
           leftDistance: leftRes.distance,
           rightDistance: rightRes.distance,
           mergedDistance: best.distance,
+          i,
+          j,
+          currentDistance,
+          bestDistance: best.distance,
+          bestPair: best.pair,
+          comparisonCount,
+          totalComparisons,
         });
       }
     }
+
+    // strip 扫描完毕，best 为合并结果
 
     upsertNode({
       ...getNode(nodeId),

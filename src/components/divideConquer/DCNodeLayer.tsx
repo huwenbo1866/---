@@ -31,24 +31,35 @@ function getNodeCardClassName(node: DCTreeNode) {
 function getLocalPointStyle(state?: DCLocalPoint["state"]) {
   switch (state) {
     case "strip":
-      return { fill: "#f59e0b", stroke: "#d97706", radius: 6.4 };
+      return { fill: "#fbbf24", stroke: "#d97706", radius: 6.4 };
+    case "candidate":
+      return { fill: "#f59e0b", stroke: "#b45309", radius: 6.9 };
+    case "base":
+      return { fill: "#f97316", stroke: "#c2410c", radius: 7.2 };
     case "compare":
-      return { fill: "#ef4444", stroke: "#b91c1c", radius: 7 };
+      return { fill: "#ef4444", stroke: "#b91c1c", radius: 7.2 };
     case "best":
-      return { fill: "#10b981", stroke: "#047857", radius: 7 };
+      return { fill: "#10b981", stroke: "#047857", radius: 7.2 };
     case "normal":
     default:
       return { fill: "#2563eb", stroke: "#1d4ed8", radius: 5.8 };
   }
 }
 
-function projectPoints(
+interface ProjectionContext {
+  minX: number;
+  minY: number;
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  height: number;
+}
+
+function createProjectionContext(
   points: DCLocalPoint[],
   width: number,
   height: number
-): ProjectedPoint[] {
-  if (points.length === 0) return [];
-
+): ProjectionContext {
   const minX = Math.min(...points.map((p) => p.x));
   const maxX = Math.max(...points.map((p) => p.x));
   const minY = Math.min(...points.map((p) => p.y));
@@ -62,27 +73,50 @@ function projectPoints(
   const xRange = maxX - minX || 1;
   const yRange = maxY - minY || 1;
 
+  // 关键：统一缩放比例，避免 x/y 独立缩放造成“拉伸”
+  const scale = Math.min(usableWidth / xRange, usableHeight / yRange);
+  const drawnWidth = xRange * scale;
+  const drawnHeight = yRange * scale;
+
+  const offsetX = padX + (usableWidth - drawnWidth) / 2;
+  const offsetY = padY + (usableHeight - drawnHeight) / 2;
+
+  return {
+    minX,
+    minY,
+    scale,
+    offsetX,
+    offsetY,
+    height,
+  };
+}
+
+function projectPoints(
+  points: DCLocalPoint[],
+  width: number,
+  height: number
+): ProjectedPoint[] {
+  if (points.length === 0) return [];
+
+  const ctx = createProjectionContext(points, width, height);
+
   return points.map((point) => ({
     ...point,
-    canvasX: padX + ((point.x - minX) / xRange) * usableWidth,
-    canvasY: height - padY - ((point.y - minY) / yRange) * usableHeight,
+    canvasX: ctx.offsetX + (point.x - ctx.minX) * ctx.scale,
+    canvasY: ctx.height - (ctx.offsetY + (point.y - ctx.minY) * ctx.scale),
   }));
 }
 
 function projectXToLocal(
   x: number,
   points: DCLocalPoint[],
-  width: number
+  width: number,
+  height: number
 ): number {
   if (points.length === 0) return width / 2;
 
-  const minX = Math.min(...points.map((p) => p.x));
-  const maxX = Math.max(...points.map((p) => p.x));
-  const padX = 14;
-  const usableWidth = width - padX * 2;
-  const xRange = maxX - minX || 1;
-
-  return padX + ((x - minX) / xRange) * usableWidth;
+  const ctx = createProjectionContext(points, width, height);
+  return ctx.offsetX + (x - ctx.minX) * ctx.scale;
 }
 
 function renderRegionHighlights(
@@ -94,7 +128,7 @@ function renderRegionHighlights(
 ) {
   if (!highlights || !splitLineX || highlights.length === 0) return null;
 
-  const localSplitX = projectXToLocal(splitLineX, points, sceneWidth);
+  const localSplitX = projectXToLocal(splitLineX, points, sceneWidth, sceneHeight);
 
   return (
     <g>
@@ -130,7 +164,7 @@ function renderGuideLines(
   return (
     <g>
       {guideLines.map((line, index) => {
-        const localX = projectXToLocal(line.x, points, sceneWidth);
+        const localX = projectXToLocal(line.x, points, sceneWidth, sceneHeight);
 
         return (
           <g key={`${line.kind}-${index}`}>
@@ -169,8 +203,8 @@ function renderStripBand(
 ) {
   if (!stripBand) return null;
 
-  const x1 = projectXToLocal(stripBand.leftX, points, sceneWidth);
-  const x2 = projectXToLocal(stripBand.rightX, points, sceneWidth);
+  const x1 = projectXToLocal(stripBand.leftX, points, sceneWidth, sceneHeight);
+  const x2 = projectXToLocal(stripBand.rightX, points, sceneWidth, sceneHeight);
   const left = Math.min(x1, x2);
   const width = Math.abs(x2 - x1);
 
@@ -283,6 +317,19 @@ export default function DCNodeLayer({ nodes }: DCNodeLayerProps) {
           sceneHeight
         );
 
+        const resultLabel = node.miniScene.result?.label;
+        const estimatedTitleWidth = node.title.length * 8.2;
+        const reservedRight = node.isSummaryNode ? 76 : 14;
+        const pillWidth = resultLabel
+          ? Math.max(56, resultLabel.length * 6.2 + 18)
+          : 0;
+
+        const rawPillX = 14 + estimatedTitleWidth + 12;
+        const maxPillX = node.width - reservedRight - pillWidth;
+        const pillX = resultLabel
+          ? Math.max(14, Math.min(rawPillX, Math.max(14, maxPillX)))
+          : 0;
+
         return (
           <g
             key={node.id}
@@ -302,13 +349,7 @@ export default function DCNodeLayer({ nodes }: DCNodeLayerProps) {
               className={getNodeCardClassName(node)}
             />
 
-            <text
-              x={14}
-              y={20}
-              fontSize="14"
-              fontWeight="700"
-              fill="#0f172a"
-            >
+            <text x={14} y={20} fontSize="14" fontWeight="700" fill="#0f172a">
               {node.title}
             </text>
 
@@ -323,6 +364,30 @@ export default function DCNodeLayer({ nodes }: DCNodeLayerProps) {
               >
                 SUMMARY
               </text>
+            ) : null}
+
+            {resultLabel ? (
+              <g>
+                <rect
+                  x={pillX}
+                  y={8}
+                  width={pillWidth}
+                  height={16}
+                  rx={8}
+                  fill="white"
+                  stroke="#cbd5e1"
+                />
+                <text
+                  x={pillX + pillWidth / 2}
+                  y={20}
+                  textAnchor="middle"
+                  fontSize="10.5"
+                  fontWeight="700"
+                  fill="#0f172a"
+                >
+                  {resultLabel}
+                </text>
+              </g>
             ) : null}
 
             <rect
@@ -386,30 +451,6 @@ export default function DCNodeLayer({ nodes }: DCNodeLayerProps) {
                   </g>
                 );
               })}
-
-              {node.miniScene.result?.label ? (
-                <g>
-                  <rect
-                    x={10}
-                    y={sceneHeight - 24}
-                    width={96}
-                    height={16}
-                    rx={8}
-                    fill="white"
-                    stroke="#cbd5e1"
-                  />
-                  <text
-                    x={58}
-                    y={sceneHeight - 12}
-                    textAnchor="middle"
-                    fontSize="10.5"
-                    fontWeight="700"
-                    fill="#0f172a"
-                  >
-                    {node.miniScene.result.label}
-                  </text>
-                </g>
-              ) : null}
             </g>
           </g>
         );

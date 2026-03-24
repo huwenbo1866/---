@@ -10,7 +10,7 @@ export type DCNodeStatus =
   | "resolved";
 
 export interface DCLocalPoint extends Point {
-  state?: "normal" | "strip" | "compare" | "best";
+  state?: "normal" | "strip" | "candidate" | "base" | "compare" | "best";
 }
 
 export interface DCResult {
@@ -92,10 +92,13 @@ export type DCStepType =
   | "dc-root-show"
   | "dc-split"
   | "dc-children-drop"
+  | "dc-children-retract"
   | "dc-left-focus"
   | "dc-left-return"
   | "dc-right-summary-fade-in"
   | "dc-merge-back-strip-ready"
+  | "dc-strip-candidates"
+  | "dc-strip-outer-enter"
   | "dc-strip-compare"
   | "dc-parent-resolved";
 
@@ -108,6 +111,15 @@ export interface DCStepMeta {
   leftDistance?: number;
   rightDistance?: number;
   mergedDistance?: number;
+
+  // strip（带状区域）扫描过程用的额外字段
+  i?: number;
+  j?: number;
+  currentDistance?: number;
+  bestDistance?: number;
+  bestPair?: [string, string];
+  comparisonCount?: number;
+  totalComparisons?: number;
 }
 
 export interface DCTreeScene {
