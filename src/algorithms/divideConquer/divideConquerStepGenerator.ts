@@ -26,6 +26,11 @@ interface LayoutBox {
   height: number;
 }
 
+
+// 缩放常量
+const ZOOM_MULTIPLIER = 1.32;
+
+
 function sortByX(points: Point[]): Point[] {
   return [...points].sort((a, b) => {
     if (a.x !== b.x) return a.x - b.x;
@@ -622,17 +627,17 @@ export function generateDivideConquerSteps(
     sceneCamera = camera;
   }
 
-  function cameraForNodes(nodeIds: string[], scale: number): DCCameraState {
+  function cameraForNodes(nodeIds: string[], baseScale: number): DCCameraState {
     const nodes = nodeIds.map(getNode);
     const minX = Math.min(...nodes.map((n) => n.layoutX - n.width / 2));
     const maxX = Math.max(...nodes.map((n) => n.layoutX + n.width / 2));
     const minY = Math.min(...nodes.map((n) => n.layoutY - n.height / 2));
     const maxY = Math.max(...nodes.map((n) => n.layoutY + n.height / 2));
-
+    
     return {
       centerX: (minX + maxX) / 2,
       centerY: (minY + maxY) / 2,
-      scale,
+      scale: baseScale * ZOOM_MULTIPLIER,   // ← 这里统一放大
     };
   }
 
