@@ -53,6 +53,8 @@ export interface StepMeta {
 export interface VisualizationScene {
   points: PointViewModel[];
   segments: SegmentViewModel[];
+  guideLines?: Array<{ x: number; label: string; kind: string }>;
+  stripBand?: { leftX: number; rightX: number; label: string };
 }
 
 export interface VisualizationStep {

@@ -52,6 +52,17 @@ export default function VisualizerCanvas({
   const padding = 56;
   const canvasPoints = projectPoints(step, width, height, padding);
 
+  // 计算坐标范围，用于将实际坐标转换为画布坐标
+  const xs = canvasPoints.map(p => p.x);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const xRange = maxX - minX || 1;
+  const usableWidth = width - padding;
+  const xScale = usableWidth / xRange;
+
+  // 辅助函数：将实际x坐标转换为画布x坐标
+  const xToCanvas = (x: number) => padding / 2 + ((x - minX) / xRange) * usableWidth;
+
   return (
     <div className="visualizer-card">
       <svg
@@ -78,6 +89,46 @@ export default function VisualizerCanvas({
           stroke="#e2e8f0"
           strokeWidth={2}
         />
+
+        {/* 渲染分割线 */}
+        {step.scene.guideLines && step.scene.guideLines.map((line, index) => {
+          const canvasX = xToCanvas(line.x);
+          return (
+            <g key={index}>
+              <line
+                x1={canvasX}
+                y1={padding / 2}
+                x2={canvasX}
+                y2={height - padding / 2}
+                stroke={line.kind === "split" ? "#ef4444" : "#3b82f6"}
+                strokeWidth={2}
+                strokeDasharray={line.kind === "split" ? "0" : "5,5"}
+              />
+              <text
+                x={canvasX}
+                y={padding / 2 - 10}
+                textAnchor="middle"
+                fill={line.kind === "split" ? "#ef4444" : "#3b82f6"}
+                fontSize="12"
+                fontWeight="bold"
+              >
+                {line.label}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* 渲染带状区域 */}
+        {step.scene.stripBand && (
+          <rect
+            x={xToCanvas(step.scene.stripBand.leftX)}
+            y={padding / 2}
+            width={xToCanvas(step.scene.stripBand.rightX) - xToCanvas(step.scene.stripBand.leftX)}
+            height={height - padding}
+            fill="#bfdbfe"
+            opacity={0.3}
+          />
+        )}
 
         <SegmentLayer segments={step.scene.segments} points={canvasPoints} />
         <PointLayer points={canvasPoints} />
